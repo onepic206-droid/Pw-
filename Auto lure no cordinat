@@ -1,4 +1,3 @@
-
 local worldname = "tupsanlure77"
 local BATCH_SIZE = 5
 
@@ -8,8 +7,6 @@ local PACK_COST = 100
 local PIXELSTATION = "PIXELSTATION"
 local WORLD = worldname:upper()
 
-math.randomseed(math.floor(math.random() * 999999))
-
 local manager = getClient()
 local managerId = manager.id
 
@@ -18,7 +15,7 @@ local function rsleep(a, b)
 end
 
 local function log(msg)
-    print("[BATCH] " .. msg)
+    print("[BATCH] " .. tostring(msg))
 end
 
 local function isBad(bot)
@@ -33,21 +30,47 @@ local function isBad(bot)
 end
 
 local function nav(bot)
-    local n = bot:navigation()
-    if n == nil then return "" end
+    local ok, n = pcall(function()
+        return bot:navigation()
+    end)
+
+    if not ok or n == nil then return "" end
     return tostring(n):upper()
 end
 
+local function safeRemove(bot)
+    if not bot then return end
+
+    log(bot.id .. " remove client")
+
+    pcall(function()
+        bot:disconnect()
+    end)
+
+    sleep(300)
+
+    pcall(function()
+        removeClient(bot.id)
+    end)
+
+    sleep(300)
+end
+
 local function dropLures(bot)
-    local inv = bot:inventory()
-    if not inv or not inv.items then return end
+    local ok, inv = pcall(function()
+        return bot:inventory()
+    end)
+
+    if not ok or not inv or not inv.items then return end
 
     for _, item in pairs(inv.items) do
-        if item and item.type == 7 and item.amount > 0 then
+        if item and item.type == 7 and item.amount and item.amount > 0 then
             log(bot.id .. " drop lure id=" .. item.id .. " amount=" .. item.amount)
+
             pcall(function()
                 bot:drop(item.id, item.type, item.amount)
             end)
+
             rsleep(250, 600)
         end
     end
@@ -58,7 +81,9 @@ local function waitNav(bot, target, timeoutSec)
     target = target:upper()
 
     while nav(bot) ~= target and t < timeoutSec do
+        if bot.status == 3 then return false end
         if isBad(bot) then return false end
+
         sleep(1000)
         t = t + 1
     end
@@ -69,30 +94,46 @@ end
 local function processWorker(bot)
     log(bot.id .. " start")
 
-    if not waitNav(bot, PIXELSTATION, 120) then
-        log(bot.id .. " failed wait PIXELSTATION")
+    if bot.status == 3 then
+        log(bot.id .. " Already On [0]")
         return
     end
 
+    if not waitNav(bot, PIXELSTATION, 120) then
+        log(bot.id .. " failed wait PIXELSTATION status=" .. tostring(bot.status))
+        return
+    end
+
+    if bot.status == 3 then return end
+
     rsleep(800, 1500)
 
-    bot:warp(worldname)
+    pcall(function()
+        bot:warp(worldname)
+    end)
+
     rsleep(3500, 5500)
 
     if not waitNav(bot, WORLD, 60) then
-        log(bot.id .. " failed warp world, nav=" .. nav(bot))
+        log(bot.id .. " failed warp world nav=" .. nav(bot))
         return
     end
 
     rsleep(800, 1500)
 
-    while bot.gems >= PACK_COST do
+    while bot.gems and bot.gems >= PACK_COST do
+        if bot.status == 3 then
+            log(bot.id .. " Already On [0]")
+            return
+        end
+
         if isBad(bot) then
             log(bot.id .. " bad status: " .. tostring(bot.status))
             return
         end
 
         local before = bot.gems
+
         log(bot.id .. " buy " .. PACK_ID .. " gems=" .. before)
 
         pcall(function()
@@ -100,8 +141,11 @@ local function processWorker(bot)
         end)
 
         local waited = 0
+
         while bot.gems >= before and waited < 20 do
+            if bot.status == 3 then return end
             if isBad(bot) then return end
+
             sleep(500)
             waited = waited + 1
         end
@@ -142,24 +186,6 @@ local function getNewWorkers(old)
     return workers
 end
 
-local function cleanupWorkers(workers)
-    log("cleanup batch")
-
-    for _, bot in pairs(workers) do
-        pcall(function()
-            bot:disconnect()
-        end)
-        sleep(300)
-
-        pcall(function()
-            removeClient(bot.id)
-        end)
-        sleep(300)
-    end
-
-    log("batch removed")
-end
-
 runThread(function()
     log("manager=" .. managerId)
 
@@ -172,44 +198,31 @@ runThread(function()
             pcall(function()
                 addClient()
             end)
+
             sleep(500)
         end
 
         sleep(2500)
 
         local workers = getNewWorkers(old)
-        local done = {}
 
         for _, bot in pairs(workers) do
-            done[bot.id] = false
-
             runThread(function()
+                if bot.status == 3 then
+                    log(bot.id .. " status Already On [0], direct remove")
+                    safeRemove(bot)
+                    return
+                end
+
                 pcall(function()
                     processWorker(bot)
                 end)
 
-                done[bot.id] = true
+                safeRemove(bot)
             end)
 
             sleep(250)
         end
-
-        local allDone = false
-
-        while not allDone do
-            allDone = true
-
-            for _, bot in pairs(workers) do
-                if done[bot.id] ~= true then
-                    allDone = false
-                    break
-                end
-            end
-
-            sleep(700)
-        end
-
-        cleanupWorkers(workers)
 
         sleep(500)
     end
