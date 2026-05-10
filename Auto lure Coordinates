@@ -1,0 +1,242 @@
+
+local worldname = "tupsanlure77"
+local BATCH_SIZE = 5
+
+local DROP_X = 43
+local DROP_Y = 33
+
+local PACK_ID = "LureBooster"
+local PACK_COST = 100
+
+local PIXELSTATION = "PIXELSTATION"
+local WORLD = worldname:upper()
+
+math.randomseed(math.floor(math.random() * 999999))
+
+local manager = getClient()
+local managerId = manager.id
+
+local function rsleep(a, b)
+    sleep(math.random(a, b))
+end
+
+local function log(msg)
+    print("[BATCH] " .. msg)
+end
+
+local function isBad(bot)
+    local s = bot.status
+    return s == "ipBanned" or
+           s == "deviceBanned" or
+           s == "rateLimited" or
+           s == "accountBanned" or
+           s == "authError" or
+           s == "kicked" or
+           s == "jwtError"
+end
+
+local function nav(bot)
+    local n = bot:navigation()
+    if n == nil then return "" end
+    return tostring(n):upper()
+end
+
+local function waitNav(bot, target, timeoutSec)
+    local t = 0
+    target = target:upper()
+
+    while nav(bot) ~= target and t < timeoutSec do
+        if isBad(bot) then return false end
+        sleep(1000)
+        t = t + 1
+    end
+
+    return nav(bot) == target
+end
+
+local function goDropTile(bot)
+    local target = Vector2i.new(DROP_X, DROP_Y)
+
+    log(bot.id .. " findpath drop tile " .. DROP_X .. "," .. DROP_Y)
+
+    bot:clearPath()
+    sleep(300)
+
+    local ok = bot:findPath(target)
+    if ok == false then
+        log(bot.id .. " findpath failed")
+        return false
+    end
+
+    local timeout = 0
+    while bot:pathfinding() and timeout < 150 do
+        if isBad(bot) then return false end
+        sleep(100)
+        timeout = timeout + 1
+    end
+
+    local p = bot:point()
+    if p and p.x == DROP_X and p.y == DROP_Y then
+        log(bot.id .. " reached drop tile")
+        return true
+    end
+
+    log(bot.id .. " not reached drop tile")
+    return false
+end
+
+local function dropLures(bot)
+    local inv = bot:inventory()
+    if not inv or not inv.items then return end
+
+    for _, item in pairs(inv.items) do
+        if item and item.type == 7 and item.amount > 0 then
+            log(bot.id .. " drop lure id=" .. item.id .. " amount=" .. item.amount)
+            bot:drop(item.id, item.type, item.amount)
+            rsleep(300, 700)
+        end
+    end
+end
+
+local function processWorker(bot)
+    log(bot.id .. " start")
+
+    if not waitNav(bot, PIXELSTATION, 120) then
+        log(bot.id .. " failed wait PIXELSTATION")
+        return
+    end
+
+    rsleep(1000, 2000)
+
+    bot:warp(worldname)
+    rsleep(5000, 8000)
+
+    if not waitNav(bot, WORLD, 60) then
+        log(bot.id .. " failed warp world, nav=" .. nav(bot))
+        return
+    end
+
+    rsleep(1000, 2000)
+
+    if not goDropTile(bot) then
+        log(bot.id .. " failed go drop tile")
+        return
+    end
+
+    rsleep(500, 1000)
+
+    while bot.gems >= PACK_COST do
+        if isBad(bot) then
+            log(bot.id .. " bad status: " .. tostring(bot.status))
+            return
+        end
+
+        local before = bot.gems
+        log(bot.id .. " buy " .. PACK_ID .. " gems=" .. before)
+
+        bot:buy(PACK_ID)
+
+        local waited = 0
+        while bot.gems >= before and waited < 30 do
+            if isBad(bot) then return end
+            sleep(500)
+            waited = waited + 1
+        end
+
+        if bot.gems >= before then
+            log(bot.id .. " buy failed/no gem change")
+            break
+        end
+
+        rsleep(500, 1200)
+        dropLures(bot)
+        rsleep(500, 1200)
+    end
+
+    dropLures(bot)
+    log(bot.id .. " done")
+end
+
+local function snapshotClients()
+    local old = {}
+    for _, c in pairs(getClients()) do
+        old[c.id] = true
+    end
+    return old
+end
+
+local function getNewWorkers(old)
+    local workers = {}
+
+    for _, c in pairs(getClients()) do
+        if c.id ~= managerId and not old[c.id] then
+            table.insert(workers, c)
+        end
+    end
+
+    return workers
+end
+
+runThread(function()
+    log("manager=" .. managerId)
+
+    while true do
+        log("new batch")
+
+        local old = snapshotClients()
+
+        for i = 1, BATCH_SIZE do
+            addClient()
+            sleep(500)
+        end
+
+        sleep(3000)
+
+        local workers = getNewWorkers(old)
+        local done = {}
+
+        for _, bot in pairs(workers) do
+            done[bot.id] = false
+
+            runThread(function()
+                pcall(function()
+                    processWorker(bot)
+                end)
+
+                done[bot.id] = true
+            end)
+
+            sleep(300)
+        end
+
+        local allDone = false
+        while not allDone do
+            allDone = true
+
+            for _, bot in pairs(workers) do
+                if done[bot.id] ~= true then
+                    allDone = false
+                    break
+                end
+            end
+
+            sleep(1000)
+        end
+
+        log("cleanup batch")
+
+        for _, bot in pairs(workers) do
+            pcall(function()
+                bot:disconnect()
+            end)
+            sleep(500)
+
+            pcall(function()
+                removeClient(bot.id)
+            end)
+            sleep(500)
+        end
+
+        rsleep(15000, 30000)
+    end
+end)
