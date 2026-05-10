@@ -20,9 +20,10 @@ end
 
 local function isBad(bot)
     local s = bot.status
-    return s == "ipBanned" or
-           s == "deviceBanned" or
+    return s == 7 or
            s == "rateLimited" or
+           s == "ipBanned" or
+           s == "deviceBanned" or
            s == "accountBanned" or
            s == "authError" or
            s == "kicked" or
@@ -94,8 +95,8 @@ end
 local function processWorker(bot)
     log(bot.id .. " start")
 
-    if bot.status == 3 then
-        log(bot.id .. " Already On [0]")
+    if bot.status == 3 or bot.status == 7 then
+        log(bot.id .. " skip status=" .. tostring(bot.status))
         return
     end
 
@@ -104,7 +105,7 @@ local function processWorker(bot)
         return
     end
 
-    if bot.status == 3 then return end
+    if bot.status == 3 or isBad(bot) then return end
 
     rsleep(800, 1500)
 
@@ -208,8 +209,8 @@ runThread(function()
 
         for _, bot in pairs(workers) do
             runThread(function()
-                if bot.status == 3 then
-                    log(bot.id .. " status Already On [0], direct remove")
+                if bot.status == 3 or bot.status == 7 or isBad(bot) then
+                    log(bot.id .. " direct remove status=" .. tostring(bot.status))
                     safeRemove(bot)
                     return
                 end
@@ -224,6 +225,10 @@ runThread(function()
             sleep(250)
         end
 
-        sleep(500)
+        sleep(5000)
     end
 end)
+
+if getClient().status == 7 then
+    removeClient()
+end
