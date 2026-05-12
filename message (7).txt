@@ -3,7 +3,7 @@
 -- ============================================
 -- WEBHOOK SUPPORT
 -- ============================================
-local BASE_WORLD = "MODBREAK:AB"     -- Base world name (Portals will be BASE_WORLD:1, etc)
+local BASE_WORLD = "kkkk:AB"     -- Base world name (Portals will be BASE_WORLD:1, etc)
 local MAX_PORTALS = 10            -- 50+ portals supported
 local TARGET_WORKERS = 50          -- 4 parallel bot workers (Max 4)
 
