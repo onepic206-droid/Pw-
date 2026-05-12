@@ -1,0 +1,449 @@
+-- ============================================
+-- LURE PACK FARMER - ADVANCED SYSTEM BY JELI AND AI
+-- ============================================
+-- WEBHOOK SUPPORT
+-- ============================================
+local BASE_WORLD = "WORLD:ID"     -- Base world name (Portals will be BASE_WORLD:1, etc)
+local MAX_PORTALS = 50            -- 50+ portals supported
+local TARGET_WORKERS = 50          -- 4 parallel bot workers (Max 4)
+
+local DROP_Y = 30                 -- Y position for drops - input ur portal y if u use portal
+local START_X = 41             -- Maximum X for random drop range
+
+local PACK_ID = "LureBooster"
+local PACK_COST = 100
+
+-- ============================================
+-- WEBHOOK CONFIGURATION
+-- ============================================
+local WEBHOOK_URL = "UR WEBHU"
+local WEBHOOK_INTERVAL = 60000
+
+-- ============================================
+-- GLOBALS (NEVER RESET)
+-- ============================================
+local manager = getClient()
+local managerId = manager.id
+local active_bots = {}
+
+local TOTAL_WORKERS_STARTED = 0
+local TOTAL_PACKS_BOUGHT = 0
+local TOTAL_LURES_DROPPED = 0
+local WEBHOOK_ELAPSED = WEBHOOK_INTERVAL
+
+local lureAccumulator = {}        -- Lure Accumulator per ID (NEVER RESET)
+local currentPortalIdx = 1
+
+function randomSleep(minMs, maxMs)
+    sleep(math.random(minMs, maxMs))
+end
+
+local PACK_DROPS_CACHE = nil
+function isPackDrop(id)
+    if not PACK_DROPS_CACHE then
+        PACK_DROPS_CACHE = {}
+        local p = getPack(PACK_ID)
+        if p and p.drops then
+            for _, d in pairs(p.drops) do
+                PACK_DROPS_CACHE[d.id] = true
+            end
+        end
+    end
+    return PACK_DROPS_CACHE[id] == true
+end
+
+function isBanned(bot)
+    local s = bot.status
+    -- Comprehensive check for banned/limited/alreadyOn statuses (string and numeric)
+    return s == "ipBanned" or s == 5 or
+           s == "deviceBanned" or s == 6 or
+           s == "rateLimited" or s == 7 or
+           s == "accountBanned" or s == 9 or
+           s == "authError" or s == 4 or
+           s == "kicked" or s == 8 or
+           s == "jwtError" or s == 14 or
+	   s == "alreadyOn" or s == 3
+end
+
+function countWorkers()
+    local count = 0
+
+    for _, c in pairs(getClients()) do
+        if c.id ~= managerId then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
+function sendStatsWebhook(activeCount)
+    if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_WEBHOOK_URL_HERE" then
+        return
+    end
+
+    local embed = {
+        title = "Pixel Worlds Lure Pack Farmer",
+        description = "Manager ID: " .. tostring(managerId),
+        color = 3447003,
+        fields = {
+            {
+                name = "LIVE STATISTICS",
+                value = string.format(
+                    "Bot Online : %d\nWorker Limit : %d\nWorkers Started : %d\nPacks Bought : %d\nLures Dropped : %d",
+                    activeCount, TARGET_WORKERS, TOTAL_WORKERS_STARTED, TOTAL_PACKS_BOUGHT, TOTAL_LURES_DROPPED
+                ),
+                inline = false
+            }
+        },
+        footer = {
+            text = "Lure Pack Farmer | Running"
+        }
+    }
+
+    pcall(function()
+        webhook(WEBHOOK_URL, {
+            username = "Zenith Bot Manager",
+            embeds = { embed }
+        })
+    end)
+end
+
+function updateWebhookTimer(elapsedMs)
+    WEBHOOK_ELAPSED = WEBHOOK_ELAPSED + elapsedMs
+
+    if WEBHOOK_ELAPSED >= WEBHOOK_INTERVAL then
+        sendStatsWebhook(countWorkers())
+        WEBHOOK_ELAPSED = 0
+    end
+end
+
+-- Reconnect Handler & Timeout System
+function ensureConnected(bot)
+    if not bot:connected() then
+        bot:connect()
+        local attempts = 0
+        while not bot:connected() and attempts < 15 do
+            sleep(1000)
+            attempts = attempts + 1
+        end
+    end
+end
+
+-- Get Random Drop Location & Auto Switch Portal
+function getDropLocation()
+    local portalName = string.format("%s:%d", BASE_WORLD, currentPortalIdx)
+    local dropX = math.random(1, START_X)
+    return portalName, dropX
+end
+
+function processBot(bot)
+    -- Configure auto-reconnect preferences
+    bot:preferences().reconnect = true
+    bot:preferences().reconnectInterval = 5000
+
+    -- Ensure Initial Connection (Call connect ONCE, then wait)
+    if not bot:connected() then
+        print(string.format("[WORM] Bot %s: Initiating connection...", bot.id))
+        bot:connect()
+    end
+
+    local connectAttempts = 0
+    while not bot:connected() do
+        if isBanned(bot) then return "banned" end
+        sleep(5000)
+        connectAttempts = connectAttempts + 1
+        if connectAttempts > 12 then -- 1 minute timeout
+            print(string.format("[WORM] Bot %s: Connection timeout.", bot.id))
+            return "connection_timeout"
+        end
+    end
+
+    -- Wait for TUTORIAL2 world
+    local tutWait = 0
+    while bot:navigation() ~= "TUTORIAL2" and tutWait < 120 do
+        if isBanned(bot) then return "banned" end
+        sleep(1000)
+        tutWait = tutWait + 1
+    end
+
+    if bot:navigation() ~= "TUTORIAL2" then
+        print(string.format("[WORM] Bot %s: Failed to detect TUTORIAL2", bot.id))
+        return "tutorial_fail"
+    end
+
+    if isBanned(bot) then return "banned" end
+
+    -- Wait for clothes purchase (gems decrease = clothes bought)
+    print(string.format("[WORM] Bot %s: Waiting for clothes purchase...", bot.id))
+    local lastGems = bot.gems or 0
+    local clothesWait = 0
+
+    while clothesWait < 120 do
+        if isBanned(bot) then return "banned" end
+
+        if bot.gems and bot.gems < lastGems then
+            print(string.format("[WORM] Bot %s: Clothes purchased detected", bot.id))
+            break
+        end
+
+        lastGems = bot.gems or lastGems
+        sleep(1000)
+        clothesWait = clothesWait + 1
+    end
+
+    if isBanned(bot) then return "banned" end
+
+    -- Fast buy lure packs (still in TUTORIAL2, before PIXELSTATION)
+    print(string.format("[WORM] Bot %s: Fast buying lures...", bot.id))
+    local buyCount = 0
+    while bot.gems and bot.gems >= PACK_COST do
+        if isBanned(bot) then return "banned" end
+
+        local beforeGems = bot.gems
+
+        pcall(function()
+            bot:send("gnNm", { mXFc = PACK_ID, MiiN = {} })
+        end)
+
+        -- Wait up to 2 seconds for gems to decrease
+        local waitGem = 0
+        while bot.gems >= beforeGems and waitGem < 20 do
+            sleep(50)
+            waitGem = waitGem + 1
+        end
+
+        if bot.gems >= beforeGems then
+            print(string.format("[WORM] Bot %s: Gem deduction failed, stopping buy.", bot.id))
+            break
+        end
+
+        buyCount = buyCount + 1
+        TOTAL_PACKS_BOUGHT = TOTAL_PACKS_BOUGHT + 1
+        sleep(50) -- Small delay between packs
+    end
+
+    print(string.format("[WORM] Bot %s: Bought %d lure packs", bot.id, buyCount))
+
+    if isBanned(bot) then return "banned" end
+
+    -- Wait for PIXELSTATION
+    local psWait = 0
+    while bot:navigation() ~= "PIXELSTATION" and psWait < 300 do
+        if isBanned(bot) then return "banned" end
+        sleep(1000)
+        psWait = psWait + 1
+    end
+
+    if bot:navigation() ~= "PIXELSTATION" then
+        print(string.format("[WORM] Bot %s: Failed to reach PIXELSTATION", bot.id))
+        return "pixelstation_fail"
+    end
+
+    if isBanned(bot) then return "banned" end
+
+    -- Check if we have pack drops before proceeding
+    local hasLures = false
+    for _, item in pairs(bot:inventory().items) do
+        if isPackDrop(item.id) then 
+            hasLures = true 
+            break 
+        end
+    end
+    if not hasLures then return "done" end
+
+    -- Auto Relog Before Dropping
+    bot:disconnect()
+    sleep(3000)
+    ensureConnected(bot)
+    
+    if isBanned(bot) then return "banned" end
+
+    -- Warp Timeout & Fallback System & Anti-Skip Portal
+    local targetWorld, targetX = getDropLocation()
+    local worldCheck = string.match(targetWorld, "^([^:]+)") or targetWorld
+    
+    local warpAttempts = 0
+    local maxWarpAttempts = 3
+    local warped = false
+    
+    while warpAttempts < maxWarpAttempts and not warped do
+        bot:warp(targetWorld)
+        randomSleep(3000, 5000)
+
+        local attempts = 0
+        while bot:navigation() ~= worldCheck and attempts < 20 do
+            if isBanned(bot) then return "banned" end
+            sleep(1000)
+            attempts = attempts + 1
+        end
+        
+        if bot:navigation() == worldCheck then
+            warped = true
+        else
+            warpAttempts = warpAttempts + 1
+            print(string.format("[WORM] Bot %s warp timeout. Fallback reconnect %d/%d", bot.id, warpAttempts, maxWarpAttempts))
+            -- Fallback/reconnect if warp timeout
+            bot:disconnect()
+            sleep(2000)
+            ensureConnected(bot)
+        end
+    end
+
+    if not warped then
+        return "warp_failed"
+    end
+
+    if isBanned(bot) then return "banned" end
+    randomSleep(500, 1500)
+
+    -- Move to progressive drop spot
+    bot:findPath(Vector2i.new(targetX, DROP_Y))
+    local pathAttempts = 0
+    while bot:pathfinding() and pathAttempts < 50 do
+        sleep(200)
+        pathAttempts = pathAttempts + 1
+    end
+
+    randomSleep(300, 800)
+
+    -- Auto Drop All Items belonging to the purchased pack (Full stacks)
+    local droppedThisRun = 0
+    for _, item in pairs(bot:inventory().items) do
+        if isPackDrop(item.id) then
+            local amt = item.amount
+            bot:drop(item.id, item.type, amt)
+            droppedThisRun = droppedThisRun + amt
+            print(string.format("[BOT %s] Dropped %d pack items (ID: %d).", tostring(bot.id), amt, item.id))
+            randomSleep(1000, 2000) -- 1s to 2s cooldown between different items
+        end
+    end
+
+    -- Lure Accumulator per ID (NEVER RESET)
+    if droppedThisRun > 0 then
+        TOTAL_LURES_DROPPED = TOTAL_LURES_DROPPED + droppedThisRun
+        if not lureAccumulator[bot.id] then lureAccumulator[bot.id] = 0 end
+        lureAccumulator[bot.id] = lureAccumulator[bot.id] + droppedThisRun
+        print(string.format("[WORM] Bot %s dropped %d lures at %s (%d,%d)! Total per ID: %d", 
+            bot.id, droppedThisRun, targetWorld, targetX, DROP_Y, lureAccumulator[bot.id]))
+    end
+
+    randomSleep(500, 1000)
+    return "done"
+end
+
+-- ============================================
+-- WORM MANAGER
+-- ============================================
+runThread(function()
+    print(string.format("[WORM] Manager: %s started.", managerId))
+
+    while true do
+        local allClients = getClients()
+        
+        -- Count current active workers (those with running threads)
+        local currentActiveCount = 0
+        for _ in pairs(active_bots) do currentActiveCount = currentActiveCount + 1 end
+
+        for _, bot in pairs(allClients) do
+            if bot.id ~= managerId and not active_bots[bot.id] then
+
+                -- HARD LIMIT LOGIC: Stop starting new bots if we are at the limit
+                if currentActiveCount >= TARGET_WORKERS then
+                    print(string.format("[WORM] Limit reached (%d/%d). Removing excess client %s.", currentActiveCount, TARGET_WORKERS, bot.id))
+                    pcall(function() bot:disconnect() end)
+                    pcall(function() removeClient(bot.id) end)
+                elseif bot.status == "alreadyOn" or bot.status == 3 then
+                    active_bots[bot.id] = true
+                    currentActiveCount = currentActiveCount + 1
+                    local deadId = bot.id
+                    runThread(function()
+                        print(string.format("[WORM] Bot %s: alreadyOn! Instant replace.", deadId))
+                        pcall(function() bot:disconnect() end)
+                        sleep(500)
+                        pcall(function() removeClient(deadId) end)
+                        active_bots[deadId] = nil
+                        sleep(500)
+                        addClient()
+                    end)
+                else
+                    active_bots[bot.id] = true
+                    currentActiveCount = currentActiveCount + 1
+                    TOTAL_WORKERS_STARTED = TOTAL_WORKERS_STARTED + 1
+
+                    runThread(function()
+                        local botId = bot.id
+
+                        local ok, result = pcall(function() return processBot(bot) end)
+
+                        if result == "banned" then
+                            print(string.format("[WORM] Bot %s: BANNED/RATELIMITED (%s). Auto-removing.", botId, tostring(bot.status)))
+                        elseif result == "warp_failed" then
+                            print(string.format("[WORM] Bot %s: Warp Failed after retries.", botId))
+                        elseif not ok then
+                            print(string.format("[WORM] Bot %s: Error: %s", botId, tostring(result)))
+                        end
+
+                        -- Spawn replacement FIRST, then self-destruct
+                        randomSleep(3000, 8000)
+                        addClient()
+
+                        -- Now remove self
+                        bot:disconnect()
+                        sleep(1000)
+                        removeClient(botId)
+                        active_bots[botId] = nil
+                    end)
+                end
+
+                sleep(200)
+                updateWebhookTimer(200)
+            end
+        end
+
+        -- Sweep: Reconnect Offline Bots & Force-kill alreadyOn
+        for _, bot in pairs(getClients()) do
+            if bot.id ~= managerId then
+                local s = bot.status
+                local deadId = bot.id
+
+                if s == "alreadyOn" or s == 3 then
+                    if active_bots[deadId] then
+                        print(string.format("[WORM] SWEEP: Bot %s alreadyOn! Force replacing.", deadId))
+                        active_bots[deadId] = nil
+                        runThread(function()
+                            pcall(function() bot:disconnect() end)
+                            sleep(500)
+                            pcall(function() removeClient(deadId) end)
+                            sleep(500)
+                            addClient()
+                        end)
+                        sleep(200)
+                    end
+                elseif s == "offline" or s == "timeout" or s == 0 or s == 2 then
+                    -- Reconnect offline bots so they can be "detected" or continue
+                    pcall(function() bot:connect() end)
+                    sleep(100)
+                    updateWebhookTimer(100)
+                end
+            end
+        end
+
+        -- Scale up if needed (Strict Limit)
+        local totalWorkerCount = 0
+        for _, c in pairs(getClients()) do
+            if c.id ~= managerId then totalWorkerCount = totalWorkerCount + 1 end
+        end
+
+        if totalWorkerCount < TARGET_WORKERS then
+            print(string.format("[WORM] Count: %d/%d. Adding client...", totalWorkerCount, TARGET_WORKERS))
+            addClient()
+            sleep(1000)
+            updateWebhookTimer(1000)
+        end
+
+        updateWebhookTimer(0)
+        sleep(5000)
+        updateWebhookTimer(5000)
+    end
+end)
