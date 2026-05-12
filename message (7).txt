@@ -3,11 +3,11 @@
 -- ============================================
 -- WEBHOOK SUPPORT
 -- ============================================
-local BASE_WORLD = "WORLD:ID"     -- Base world name (Portals will be BASE_WORLD:1, etc)
-local MAX_PORTALS = 50            -- 50+ portals supported
+local BASE_WORLD = "modbreak:AB"     -- Base world name (Portals will be BASE_WORLD:1, etc)
+local MAX_PORTALS = 10            -- 50+ portals supported
 local TARGET_WORKERS = 50          -- 4 parallel bot workers (Max 4)
 
-local DROP_Y = 30                 -- Y position for drops - input ur portal y if u use portal
+local DROP_Y = 12                 -- Y position for drops - input ur portal y if u use portal
 local START_X = 41             -- Maximum X for random drop range
 
 local PACK_ID = "LureBooster"
@@ -16,7 +16,7 @@ local PACK_COST = 100
 -- ============================================
 -- WEBHOOK CONFIGURATION
 -- ============================================
-local WEBHOOK_URL = "UR WEBHU"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1479853594416124016/Da1c-O02WM5AenCTT5GaKihq6oevBXvhjN4Br_lWQhkO_ESm8BcGMNTIf3bxIiVZW6_P"
 local WEBHOOK_INTERVAL = 60000
 
 -- ============================================
