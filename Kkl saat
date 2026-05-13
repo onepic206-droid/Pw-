@@ -1,6 +1,4 @@
 --[[
-AUTO WATER BREAK
-FINAL REVISI STABLE ZENITH
 
 Features:
 - Random world
@@ -9,11 +7,8 @@ Features:
 - Infinite reconnect
 - Auto restart thread
 - Random drop X
-- Discord webhook
-- Retry warp if server full
-- Anti skip world
 - Anti stuck
-- Anti crash
+- Anti stop
 - Zenith compatible
 ]]
 
@@ -25,11 +20,11 @@ local CONFIG = {
     DROP_Y            = 12,
 
     DROP_X_MIN        = 1,
-    DROP_X_MAX        = 20,
+    DROP_X_MAX        = 10,
 
     WATER_BLOCK_ID    = 18,
 
-    DROP_THRESHOLD    = 50,
+    DROP_THRESHOLD    = 5,
 
     HIT_DELAY         = 300,
     MAX_HITS          = 25,
@@ -38,24 +33,13 @@ local CONFIG = {
     COLLECT_DELAY     = 50,
 
     RECONNECT_DELAY   = 5000,
-    PATH_TIMEOUT      = 10000,
+    WORLD_LOAD_DELAY  = 4000,
+    PATH_TIMEOUT      = 15000,
 
     RAND_MIN          = 30,
     RAND_MAX          = 150,
 }
 -- ==========================================
-
-
--- ================= WEBHOOK =================
-local WEBHOOK_URL      = "https://discord.com/api/webhooks/1479853594416124016/Da1c-O02WM5AenCTT5GaKihq6oevBXvhjN4Br_lWQhkO_ESm8BcGMNTIf3bxIiVZW6_P"
-local WEBHOOK_INTERVAL = 60000
-
-local WEBHOOK_ELAPSED  = 0
-local UPTIME_SECONDS   = 0
-
-local TOTAL_BROKEN     = 0
-local TOTAL_WORLDS     = 0
--- ===========================================
 
 
 -- ================= AUTO COLLECT =================
@@ -103,102 +87,6 @@ local function getDropLocation()
     )
 end
 -- =========================================
-
-
--- ================= WEBHOOK =================
-local function sendWebhook(botId)
-
-    if WEBHOOK_URL == "" then
-        return
-    end
-
-    local hours =
-        math.floor(UPTIME_SECONDS / 3600)
-
-    local minutes =
-        math.floor(
-            (UPTIME_SECONDS % 3600) / 60
-        )
-
-    local seconds =
-        UPTIME_SECONDS % 60
-
-    local uptimeText = string.format(
-        "%02d:%02d:%02d",
-        hours,
-        minutes,
-        seconds
-    )
-
-    local embed = {
-
-        title = "AUTO WATER BREAK",
-        description =
-            "Realtime Zenith Statistics",
-
-        color = 5763719,
-
-        fields = {
-
-            {
-                name = "BOT",
-                value = string.format(
-                    "Bot ID : %s\nStatus : ONLINE",
-                    tostring(botId)
-                ),
-                inline = false
-            },
-
-            {
-                name = "FARM",
-                value = string.format(
-                    "Total Broken : %d\nWorlds Done : %d",
-                    TOTAL_BROKEN,
-                    TOTAL_WORLDS
-                ),
-                inline = false
-            },
-
-            {
-                name = "UPTIME",
-                value = uptimeText,
-                inline = false
-            }
-
-        }
-    }
-
-    pcall(function()
-
-        webhook(WEBHOOK_URL, {
-
-            username = "Zenith Water Bot",
-
-            embeds = { embed }
-
-        })
-
-    end)
-end
-
-
-local function updateWebhook(botId, elapsedMs)
-
-    WEBHOOK_ELAPSED =
-        WEBHOOK_ELAPSED + elapsedMs
-
-    UPTIME_SECONDS =
-        UPTIME_SECONDS +
-        math.floor(elapsedMs / 1000)
-
-    if WEBHOOK_ELAPSED >= WEBHOOK_INTERVAL then
-
-        sendWebhook(botId)
-
-        WEBHOOK_ELAPSED = 0
-    end
-end
--- ===========================================
 
 
 -- ================= FORCE RECONNECT =================
@@ -273,47 +161,26 @@ function botMain(client, botId)
 
 
     -- ================= WAIT WORLD =================
-    local function waitForWorld(targetWorld)
+    local function waitForWorld()
 
-        local timeout = 0
+        sleep(CONFIG.WORLD_LOAD_DELAY)
 
-        while true do
+        local t = 0
 
-            ensureConnected()
+        while t < 15000 do
 
-            local world = client:world()
-
-            if world
+            if client:connected()
+            and client:world()
             and client:navigation() ~= "#menu" then
-
-                local name =
-                    tostring(world.name or "")
-
-                name = string.upper(name)
-
-                if name ==
-                string.upper(targetWorld) then
-                    return true
-                end
+                return true
             end
 
             sleep(500)
 
-            timeout = timeout + 500
-
-            if timeout >= 10000 then
-
-                warn(
-                    "World load timeout, retry warp..."
-                )
-
-                pcall(function()
-                    client:warp(targetWorld)
-                end)
-
-                timeout = 0
-            end
+            t = t + 500
         end
+
+        return false
     end
     -- ==============================================
 
@@ -602,7 +469,10 @@ function botMain(client, botId)
             client:warp(CONFIG.SAVE_WORLD)
         end)
 
-        waitForWorld(CONFIG.SAVE_WORLD)
+        if not waitForWorld() then
+            warn("Cannot enter save world!")
+            return false
+        end
 
         sleep(1500)
 
@@ -682,8 +552,6 @@ function botMain(client, botId)
 
     while true do
 
-        updateWebhook(botId, 1000)
-
         ensureConnected()
 
         if shouldDrop() then
@@ -691,7 +559,6 @@ function botMain(client, botId)
         end
 
         worldCount = worldCount + 1
-        TOTAL_WORLDS = worldCount
 
         local worldName =
             generateWorldName()
@@ -702,98 +569,102 @@ function botMain(client, botId)
             client:warp(worldName)
         end)
 
-        waitForWorld(worldName)
+        if not waitForWorld() then
 
-        info("Entered: " .. worldName)
+            warn("Warp failed")
 
-        local worldBroken = 0
-        local failCount = 0
+            sleep(2000)
 
-        while true do
+        else
 
-            ensureConnected()
+            info("Entered: " .. worldName)
 
-            if shouldDrop() then
-                dropToSaveWorld()
-                break
-            end
+            local worldBroken = 0
+            local failCount = 0
 
-            local waterTiles =
-                getWaterTiles()
-
-            if #waterTiles == 0 then
-                info("Water depleted")
-                break
-            end
-
-            info(
-                "Found water: " ..
-                #waterTiles
-            )
-
-            local brokenRound = 0
-
-            for _, point in ipairs(waterTiles) do
+            while true do
 
                 ensureConnected()
 
                 if shouldDrop() then
+                    dropToSaveWorld()
                     break
                 end
 
-                if tileHasWater(point) then
+                local waterTiles =
+                    getWaterTiles()
 
-                    local ok =
-                        breakWater(point)
+                if #waterTiles == 0 then
+                    info("Water depleted")
+                    break
+                end
 
-                    if ok then
+                info(
+                    "Found water: " ..
+                    #waterTiles
+                )
 
-                        worldBroken =
-                            worldBroken + 1
+                local brokenRound = 0
 
-                        totalBroken =
-                            totalBroken + 1
+                for _, point in ipairs(waterTiles) do
 
-                        TOTAL_BROKEN =
-                            totalBroken
+                    ensureConnected()
 
-                        brokenRound =
-                            brokenRound + 1
+                    if shouldDrop() then
+                        break
+                    end
 
-                        if worldBroken % 5 == 0 then
+                    if tileHasWater(point) then
 
-                            info(
-                                "Broken: " ..
-                                worldBroken ..
-                                " | Total: " ..
-                                totalBroken
-                            )
+                        local ok =
+                            breakWater(point)
+
+                        if ok then
+
+                            worldBroken =
+                                worldBroken + 1
+
+                            totalBroken =
+                                totalBroken + 1
+
+                            brokenRound =
+                                brokenRound + 1
+
+                            if worldBroken % 5 == 0 then
+
+                                info(
+                                    "Broken: " ..
+                                    worldBroken ..
+                                    " | Total: " ..
+                                    totalBroken
+                                )
+                            end
                         end
                     end
+
+                    sleep(CONFIG.TILE_DELAY)
                 end
 
-                sleep(CONFIG.TILE_DELAY)
-            end
+                if brokenRound == 0 then
 
-            if brokenRound == 0 then
+                    failCount =
+                        failCount + 1
 
-                failCount =
-                    failCount + 1
+                    if failCount >= 3 then
+                        warn(
+                            "No progress, skip world"
+                        )
+                        break
+                    end
 
-                if failCount >= 3 then
-                    warn(
-                        "No progress, skip world"
-                    )
-                    break
+                else
+                    failCount = 0
                 end
 
-            else
-                failCount = 0
+                safeCollect()
+
+                sleep(500)
             end
-
-            safeCollect()
-
-            sleep(500)
         end
 
         info(
