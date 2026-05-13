@@ -1,79 +1,96 @@
 --[[
-  AUTO WATER BREAK - MULTI BOT (FINAL REVISED)
+    AUTO WATER BREAK - FINAL SAFE REVISION
 
-  Features:
-  1. Random world generator
-  2. Auto break all water
-  3. Auto collect improved
-  4. Auto reconnect
-  5. Auto drop to save world
-  6. Anti stuck / no progress detection
-  7. Multi bot safe
+    FEATURES:
+    - Multi bot safe
+    - Random world generator
+    - Auto reconnect
+    - Anti spam collect
+    - Anti kick improvement
+    - Smart collect cooldown
+    - Auto drop inventory
+    - Auto skip stuck world
 ]]
 
--- ==================== CONFIG ====================
+-- ================= CONFIG =================
+
 local CONFIG = {
+
     SAVE_WORLD       = "MODBREAK:AB",
-    DROP_X           = 3,
+    DROP_X           = 2,
     DROP_Y           = 12,
 
     WATER_BLOCK_ID   = 18,
 
-    DROP_THRESHOLD   = 50,
+    DROP_THRESHOLD   = 25,
 
-    HIT_DELAY        = 300,
+    HIT_DELAY        = 320,
     MAX_HITS         = 25,
-    TILE_DELAY       = 150,
-    COLLECT_DELAY    = 100,
+
+    TILE_DELAY       = 180,
+    COLLECT_DELAY    = 220,
+
     RECONNECT_DELAY  = 5000,
     WORLD_LOAD_DELAY = 4000,
+
     PATH_TIMEOUT     = 10000,
 
-    RAND_MIN         = 30,
-    RAND_MAX         = 150,
+    RAND_MIN         = 80,
+    RAND_MAX         = 220,
 }
 
--- ==================== UTILS ======================
-local function log(botId, msg)
-    print("[Bot " .. tostring(botId) .. "] " .. msg)
+-- ==========================================
+
+math.randomseed(os.time())
+
+-- ================= UTILS ==================
+
+local function log(botId, text)
+    print("[Bot " .. tostring(botId) .. "] " .. text)
 end
 
 local function generateWorldName()
-    local name = ""
-    for i = 1, 7 do
-        name = name .. string.char(math.random(65, 90))
-    end
-    return name
-end
--- =================================================
 
--- ==================== BOT LOGIC ==================
+    local result = ""
+
+    for i = 1, 7 do
+        result = result .. string.char(math.random(65,90))
+    end
+
+    return result
+end
+
+-- ==========================================
+
 function botMain(client, botId)
 
-    local function info(msg)
-        log(botId, "[>] " .. msg)
+    local function info(text)
+        log(botId, "[>] " .. text)
     end
 
-    local function warn(msg)
-        log(botId, "[!] " .. msg)
+    local function warn(text)
+        log(botId, "[!] " .. text)
     end
 
-    -- ================= CONNECT =================
+    -- ================= RECONNECT =================
 
     local function ensureConnected()
+
         if client:connected() then
             return true
         end
 
         warn("Disconnected. Reconnecting...")
+
         sleep(CONFIG.RECONNECT_DELAY)
 
         client:connect()
 
-        local t = 0
-        while not client:connected() and t < 15000 do
+        local timeout = 0
+
+        while not client:connected() and timeout < 15000 do
             sleep(1000)
-            t = t + 1000
+            timeout = timeout + 1000
         end
 
         if not client:connected() then
@@ -82,19 +99,24 @@ function botMain(client, botId)
         end
 
         info("Reconnected!")
+
         return true
     end
 
-    -- ================= WORLD LOAD =================
+    -- ================= WAIT WORLD =================
 
     local function waitForWorld()
+
         sleep(CONFIG.WORLD_LOAD_DELAY)
 
-        local t = 0
-        while t < 15000 do
+        local timeout = 0
+
+        while timeout < 15000 do
+
             local w = client:world()
 
             if w then
+
                 local nav = client:navigation()
 
                 if nav and nav ~= "#menu" then
@@ -103,7 +125,8 @@ function botMain(client, botId)
             end
 
             sleep(500)
-            t = t + 500
+
+            timeout = timeout + 500
         end
 
         return false
@@ -112,16 +135,18 @@ function botMain(client, botId)
     -- ================= PATH =================
 
     local function pathTo(point)
+
         if not ensureConnected() then
             return false
         end
 
-        local myPos = client:point()
-        if not myPos then
+        local pos = client:point()
+
+        if not pos then
             return false
         end
 
-        if myPos:equals(point) then
+        if pos:equals(point) then
             return true
         end
 
@@ -131,12 +156,13 @@ function botMain(client, botId)
             return false
         end
 
-        local t = 0
+        local timeout = 0
 
-        while client:pathfinding() and t < CONFIG.PATH_TIMEOUT do
+        while client:pathfinding() and timeout < CONFIG.PATH_TIMEOUT do
+
             sleep(100)
 
-            t = t + 100
+            timeout = timeout + 100
 
             if not client:connected() then
                 return false
@@ -154,6 +180,7 @@ function botMain(client, botId)
     -- ================= TILE CHECK =================
 
     local function tileHasWater(point)
+
         local w = client:world()
 
         if not w then
@@ -169,9 +196,10 @@ function botMain(client, botId)
         return tile.water and tile.water ~= 0
     end
 
-    -- ================= GET WATER =================
+    -- ================= WATER LIST =================
 
     local function getWaterTiles()
+
         local w = client:world()
 
         if not w then
@@ -181,6 +209,7 @@ function botMain(client, botId)
         local result = {}
 
         for _, tile in pairs(w.tiles) do
+
             if tile.water and tile.water ~= 0 then
                 table.insert(result, tile:point())
             end
@@ -189,9 +218,20 @@ function botMain(client, botId)
         return result
     end
 
-    -- ================= COLLECT =================
+    -- ================= SAFE COLLECT =================
 
-    local function safeCollect()
+    local lastCollect = 0
+
+    local function safeCollect(force)
+
+        local now = os.time()
+
+        -- anti spam cooldown
+        if not force and (now - lastCollect) < 2 then
+            return
+        end
+
+        lastCollect = now
 
         pcall(function()
 
@@ -201,26 +241,38 @@ function botMain(client, botId)
                 return
             end
 
-            for repeatCollect = 1, 3 do
+            local cols = w.collectables
 
-                local cols = w.collectables
-
-                if cols then
-                    for _, c in pairs(cols) do
-
-                        pcall(function()
-                            client:collect(c.id)
-                        end)
-
-                        sleep(CONFIG.COLLECT_DELAY)
-                    end
-                end
-
-                sleep(250)
+            if not cols then
+                return
             end
 
-        end)
+            -- stop path first
+            client:clearPath()
 
+            sleep(350)
+
+            local collected = 0
+
+            for _, c in pairs(cols) do
+
+                pcall(function()
+                    client:collect(c.id)
+                end)
+
+                collected = collected + 1
+
+                sleep(CONFIG.COLLECT_DELAY + math.random(50,150))
+
+                -- limit collect per cycle
+                if collected >= 6 then
+                    break
+                end
+            end
+
+            sleep(500)
+
+        end)
     end
 
     -- ================= BREAK WATER =================
@@ -231,14 +283,14 @@ function botMain(client, botId)
             return true
         end
 
-        local myPos = client:point()
+        local pos = client:point()
 
-        if not myPos then
+        if not pos then
             return false
         end
 
-        local dx = math.abs(myPos.x - point.x)
-        local dy = math.abs(myPos.y - point.y)
+        local dx = math.abs(pos.x - point.x)
+        local dy = math.abs(pos.y - point.y)
 
         local inRange = (dx <= 1 and dy <= 1)
 
@@ -253,6 +305,7 @@ function botMain(client, botId)
             local size = w.size
 
             local spots = {
+
                 Vector2i.new(point.x, point.y + 1),
                 Vector2i.new(point.x - 1, point.y),
                 Vector2i.new(point.x + 1, point.y),
@@ -265,8 +318,10 @@ function botMain(client, botId)
 
             for _, spot in ipairs(spots) do
 
-                if spot.x >= 0 and spot.x < size.x and
-                   spot.y >= 0 and spot.y < size.y then
+                if spot.x >= 0 and
+                   spot.x < size.x and
+                   spot.y >= 0 and
+                   spot.y < size.y then
 
                     if pathTo(spot) then
                         reached = true
@@ -280,7 +335,7 @@ function botMain(client, botId)
             end
         end
 
-        -- HIT LOOP
+        -- hit loop
         for i = 1, CONFIG.MAX_HITS do
 
             if not client:connected() then
@@ -289,16 +344,12 @@ function botMain(client, botId)
 
             client:hit(point)
 
-            sleep(CONFIG.HIT_DELAY + math.random(CONFIG.RAND_MIN, CONFIG.RAND_MAX))
+            sleep(
+                CONFIG.HIT_DELAY +
+                math.random(CONFIG.RAND_MIN, CONFIG.RAND_MAX)
+            )
 
             if not tileHasWater(point) then
-
-                -- wait item spawn
-                sleep(400)
-
-                -- collect immediately
-                safeCollect()
-
                 return true
             end
         end
@@ -313,18 +364,24 @@ function botMain(client, botId)
         local inv = client:inventory()
 
         if not inv then
-            return 0, 0
+            return 0,0
         end
 
         local blocks = 0
         local seeds = 0
 
         pcall(function()
-            blocks = inv:count(CONFIG.WATER_BLOCK_ID, InventoryItemType.water) or 0
+            blocks = inv:count(
+                CONFIG.WATER_BLOCK_ID,
+                InventoryItemType.water
+            ) or 0
         end)
 
         pcall(function()
-            seeds = inv:count(CONFIG.WATER_BLOCK_ID, InventoryItemType.seed) or 0
+            seeds = inv:count(
+                CONFIG.WATER_BLOCK_ID,
+                InventoryItemType.seed
+            ) or 0
         end)
 
         return blocks, seeds
@@ -349,22 +406,25 @@ function botMain(client, botId)
         client:warp(CONFIG.SAVE_WORLD)
 
         if not waitForWorld() then
-            warn("Failed enter save world!")
+            warn("Cannot enter save world!")
             return false
         end
 
         sleep(2000)
 
-        local dropPoint = Vector2i.new(CONFIG.DROP_X, CONFIG.DROP_Y)
+        local dropPoint = Vector2i.new(
+            CONFIG.DROP_X,
+            CONFIG.DROP_Y
+        )
 
         if not pathTo(dropPoint) then
 
-            warn("Main drop point failed, trying nearby...")
+            warn("Main drop failed. Trying nearby...")
 
             local walked = false
 
-            for ox = -2, 2 do
-                for oy = -2, 2 do
+            for ox = -2,2 do
+                for oy = -2,2 do
 
                     if ox ~= 0 or oy ~= 0 then
 
@@ -391,12 +451,13 @@ function botMain(client, botId)
             end
         end
 
-        sleep(500)
+        sleep(700)
 
         local blocks, seeds = getWaterCounts()
 
         if blocks > 0 then
-            info("Dropping water blocks: " .. blocks)
+
+            info("Dropping blocks: " .. blocks)
 
             client:drop(
                 CONFIG.WATER_BLOCK_ID,
@@ -404,11 +465,12 @@ function botMain(client, botId)
                 blocks
             )
 
-            sleep(1000)
+            sleep(1200)
         end
 
         if seeds > 0 then
-            info("Dropping water seeds: " .. seeds)
+
+            info("Dropping seeds: " .. seeds)
 
             client:drop(
                 CONFIG.WATER_BLOCK_ID,
@@ -416,12 +478,12 @@ function botMain(client, botId)
                 seeds
             )
 
-            sleep(1000)
+            sleep(1200)
         end
 
-        info("Drop complete!")
-
         sleep(1000)
+
+        info("Drop complete!")
 
         return true
     end
@@ -444,12 +506,10 @@ function botMain(client, botId)
             break
         end
 
-        -- inventory check
         if shouldDrop() then
             dropToSaveWorld()
         end
 
-        -- generate world
         worldCount = worldCount + 1
 
         local worldName = generateWorldName()
@@ -466,12 +526,12 @@ function botMain(client, botId)
 
         else
 
-            info("Entered: " .. worldName)
+            info("Entered world: " .. worldName)
 
             sleep(1000)
 
             local worldBroken = 0
-            local noProgressCount = 0
+            local noProgress = 0
 
             while true do
 
@@ -487,11 +547,11 @@ function botMain(client, botId)
                 local waterTiles = getWaterTiles()
 
                 if #waterTiles == 0 then
-                    info("Water depleted! Broken: " .. worldBroken)
+                    info("Water depleted!")
                     break
                 end
 
-                info("Found water tiles: " .. #waterTiles)
+                info("Found water: " .. #waterTiles)
 
                 local brokenThisRound = 0
 
@@ -515,9 +575,6 @@ function botMain(client, botId)
                             totalBroken = totalBroken + 1
                             brokenThisRound = brokenThisRound + 1
 
-                            -- collect every success
-                            safeCollect()
-
                             if worldBroken % 5 == 0 then
 
                                 info(
@@ -526,10 +583,14 @@ function botMain(client, botId)
                                     " | Total: " ..
                                     totalBroken
                                 )
+                            end
 
-                                sleep(300)
+                            -- collect every 12 break
+                            if worldBroken % 12 == 0 then
 
-                                safeCollect()
+                                sleep(500)
+
+                                safeCollect(true)
                             end
                         end
                     end
@@ -537,19 +598,20 @@ function botMain(client, botId)
                     sleep(CONFIG.TILE_DELAY)
                 end
 
-                -- anti stuck
                 if brokenThisRound == 0 then
 
-                    noProgressCount = noProgressCount + 1
+                    noProgress = noProgress + 1
 
-                    if noProgressCount >= 3 then
+                    if noProgress >= 3 then
                         warn("No progress 3x. Skip world.")
                         break
                     end
 
                 else
-                    noProgressCount = 0
+                    noProgress = 0
                 end
+
+                sleep(500)
 
                 safeCollect()
 
@@ -568,21 +630,21 @@ function botMain(client, botId)
     end
 end
 
--- =================================================
+-- ==========================================
 
--- ==================== STARTUP ====================
+-- ================= STARTUP =================
 
 local myClient = getClient()
 local myId = myClient.id or "unknown"
 
-print("====================================")
-print("      AUTO WATER BREAK FINAL")
-print("====================================")
+print("======================================")
+print(" AUTO WATER BREAK FINAL SAFE")
+print("======================================")
 print("Bot ID      : " .. tostring(myId))
 print("Save World  : " .. CONFIG.SAVE_WORLD)
 print("Drop Point  : (" .. CONFIG.DROP_X .. "," .. CONFIG.DROP_Y .. ")")
 print("Threshold   : " .. CONFIG.DROP_THRESHOLD)
-print("====================================")
+print("======================================")
 
 runThread(function()
 
@@ -602,4 +664,4 @@ end)
 
 print("[*] Bot thread started!")
 
--- =================================================
+-- ==========================================
