@@ -10,11 +10,12 @@ Features:
 - Auto drop
 - Anti kick
 - Better pathfinding
+- set world harus huruf besar
 ]]
 
 -- ================= CONFIG =================
 local CONFIG = {
-    SAVE_WORLD        = "MODBREAK:AB",
+    SAVE_WORLD        = "WORLD:AB",
 
     DROP_X            = 2,
     DROP_Y            = 12,
