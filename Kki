@@ -1,0 +1,837 @@
+--[[
+AUTO WATER BREAK
+FINAL REVISI WEBHOOK + INFINITE RECONNECT
+
+Features:
+- Random world
+- Auto break water
+- Auto collect
+- Infinite reconnect
+- Auto restart thread
+- Random drop X
+- Webhook stats
+- Anti stuck
+- Anti stop
+- Stable farming
+]]
+
+-- ================= CONFIG =================
+local CONFIG = {
+
+    SAVE_WORLD        = "WORLD:AB",
+
+    DROP_Y            = 12,
+
+    DROP_X_MIN        = 1,
+    DROP_X_MAX        = 20,
+
+    WATER_BLOCK_ID    = 18,
+
+    DROP_THRESHOLD    = 50,
+
+    HIT_DELAY         = 300,
+    MAX_HITS          = 25,
+
+    TILE_DELAY        = 120,
+    COLLECT_DELAY     = 50,
+
+    RECONNECT_DELAY   = 5000,
+    WORLD_LOAD_DELAY  = 4000,
+    PATH_TIMEOUT      = 10000,
+
+    RAND_MIN          = 30,
+    RAND_MAX          = 150,
+}
+-- ==========================================
+
+
+-- ================= WEBHOOK =================
+local WEBHOOK_URL      = "https://discord.com/api/webhooks/1479853594416124016/Da1c-O02WM5AenCTT5GaKihq6oevBXvhjN4Br_lWQhkO_ESm8BcGMNTIf3bxIiVZW6_P"
+local WEBHOOK_INTERVAL = 60000
+
+local START_TIME       = os.time()
+local WEBHOOK_ELAPSED  = 0
+
+local TOTAL_BROKEN     = 0
+local TOTAL_WORLDS     = 0
+-- ===========================================
+
+
+-- ================= AUTO COLLECT =================
+getPreferences().collect = true
+getPreferences().collectInterval = 50
+-- =================================================
+
+
+-- ================= UTILS =================
+local function log(id, txt)
+    print("[Bot " .. id .. "] " .. txt)
+end
+
+local function rnd(min, max)
+    return math.random(min, max)
+end
+
+local function rsleep(ms)
+    sleep(ms + rnd(CONFIG.RAND_MIN, CONFIG.RAND_MAX))
+end
+
+local function generateWorldName()
+
+    local result = ""
+
+    for i = 1, 7 do
+        result = result .. string.char(math.random(65, 90))
+    end
+
+    return result
+end
+
+local function getDropLocation()
+
+    local randomX = math.random(
+        CONFIG.DROP_X_MIN,
+        CONFIG.DROP_X_MAX
+    )
+
+    return Vector2i.new(
+        randomX,
+        CONFIG.DROP_Y
+    )
+end
+-- =========================================
+
+
+-- ================= WEBHOOK =================
+local function sendWebhook(botId)
+
+    if WEBHOOK_URL == "" then
+        return
+    end
+
+    local uptimeSeconds =
+        os.time() - START_TIME
+
+    local hours =
+        math.floor(uptimeSeconds / 3600)
+
+    local minutes =
+        math.floor((uptimeSeconds % 3600) / 60)
+
+    local seconds =
+        uptimeSeconds % 60
+
+    local uptimeText = string.format(
+        "%02d:%02d:%02d",
+        hours,
+        minutes,
+        seconds
+    )
+
+    local embed = {
+
+        title = "AUTO WATER BREAK",
+        description = "Realtime Bot Statistics",
+        color = 5763719,
+
+        fields = {
+
+            {
+                name = "BOT INFO",
+                value = string.format(
+                    "Bot ID : %s\nStatus : ONLINE",
+                    tostring(botId)
+                ),
+                inline = false
+            },
+
+            {
+                name = "FARM STATS",
+                value = string.format(
+                    "Total Broken : %d\nWorlds Done : %d",
+                    TOTAL_BROKEN,
+                    TOTAL_WORLDS
+                ),
+                inline = false
+            },
+
+            {
+                name = "SYSTEM",
+                value = string.format(
+                    "Uptime : %s",
+                    uptimeText
+                ),
+                inline = false
+            }
+
+        },
+
+        footer = {
+            text = "Water Break Monitor"
+        },
+
+        timestamp =
+            os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+
+    pcall(function()
+
+        webhook(WEBHOOK_URL, {
+            username = "Water Break",
+            embeds = { embed }
+        })
+
+    end)
+end
+
+local function updateWebhook(botId, elapsed)
+
+    WEBHOOK_ELAPSED =
+        WEBHOOK_ELAPSED + elapsed
+
+    if WEBHOOK_ELAPSED >= WEBHOOK_INTERVAL then
+
+        sendWebhook(botId)
+
+        WEBHOOK_ELAPSED = 0
+    end
+end
+-- ===========================================
+
+
+-- ================= FORCE RECONNECT =================
+local function forceReconnect(client, botId)
+
+    while true do
+
+        if client:connected() then
+            return true
+        end
+
+        log(botId, "[RECONNECT] Connecting...")
+
+        pcall(function()
+            client:connect()
+        end)
+
+        local timeout = 0
+
+        while timeout < 30000 do
+
+            if client:connected() then
+
+                log(
+                    botId,
+                    "[RECONNECT] Connected!"
+                )
+
+                return true
+            end
+
+            sleep(1000)
+
+            timeout = timeout + 1000
+        end
+
+        log(
+            botId,
+            "[RECONNECT] Retry in 5 sec"
+        )
+
+        sleep(5000)
+    end
+end
+-- ===================================================
+
+
+-- ================= BOT =================
+function botMain(client, botId)
+
+    local function info(t)
+        log(botId, "[>] " .. t)
+    end
+
+    local function warn(t)
+        log(botId, "[!] " .. t)
+    end
+
+
+    -- ================= CONNECT =================
+    local function ensureConnected()
+
+        if client:connected() then
+            return true
+        end
+
+        warn("Disconnected!")
+
+        return forceReconnect(client, botId)
+    end
+    -- ===========================================
+
+
+    -- ================= WAIT WORLD =================
+    local function waitForWorld()
+
+        sleep(CONFIG.WORLD_LOAD_DELAY)
+
+        local t = 0
+
+        while t < 15000 do
+
+            if client:connected()
+            and client:world()
+            and client:navigation() ~= "#menu" then
+                return true
+            end
+
+            sleep(500)
+
+            t = t + 500
+        end
+
+        return false
+    end
+    -- ==============================================
+
+
+    -- ================= PATH =================
+    local function pathTo(point)
+
+        ensureConnected()
+
+        local me = client:point()
+
+        if not me then
+            return false
+        end
+
+        if me:equals(point) then
+            return true
+        end
+
+        local ok = client:findPath(point)
+
+        if not ok then
+            return false
+        end
+
+        local t = 0
+
+        while client:pathfinding()
+        and t < CONFIG.PATH_TIMEOUT do
+
+            if not client:connected() then
+                ensureConnected()
+                return false
+            end
+
+            sleep(100)
+
+            t = t + 100
+        end
+
+        if client:pathfinding() then
+
+            pcall(function()
+                client:clearPath()
+            end)
+
+            return false
+        end
+
+        return true
+    end
+    -- ========================================
+
+
+    -- ================= TILE CHECK =================
+    local function tileHasWater(point)
+
+        local w = client:world()
+
+        if not w then
+            return false
+        end
+
+        local tile = w:tile(point)
+
+        if not tile then
+            return false
+        end
+
+        return tile.water and tile.water ~= 0
+    end
+    -- ==============================================
+
+
+    -- ================= WATER LIST =================
+    local function getWaterTiles()
+
+        local w = client:world()
+
+        if not w then
+            return {}
+        end
+
+        local result = {}
+
+        for _, tile in pairs(w.tiles) do
+
+            if tile.water and tile.water ~= 0 then
+                table.insert(result, tile:point())
+            end
+        end
+
+        return result
+    end
+    -- ==============================================
+
+
+    -- ================= SAFE COLLECT =================
+    local function safeCollect()
+
+        pcall(function()
+
+            local w = client:world()
+
+            if not w then
+                return
+            end
+
+            local collectList = {}
+
+            for _, obj in pairs(w.collectables) do
+
+                if obj and obj.id then
+                    table.insert(
+                        collectList,
+                        obj.id
+                    )
+                end
+            end
+
+            for _, id in ipairs(collectList) do
+
+                if not client:connected() then
+                    ensureConnected()
+                    break
+                end
+
+                pcall(function()
+                    client:collect(id)
+                end)
+
+                sleep(CONFIG.COLLECT_DELAY)
+            end
+
+        end)
+    end
+    -- =================================================
+
+
+    -- ================= INVENTORY =================
+    local function getWaterCounts()
+
+        local inv = client:inventory()
+
+        if not inv then
+            return 0, 0
+        end
+
+        local blocks = 0
+        local seeds = 0
+
+        pcall(function()
+            blocks = inv:count(
+                CONFIG.WATER_BLOCK_ID,
+                InventoryItemType.water
+            ) or 0
+        end)
+
+        pcall(function()
+            seeds = inv:count(
+                CONFIG.WATER_BLOCK_ID,
+                InventoryItemType.seed
+            ) or 0
+        end)
+
+        return blocks, seeds
+    end
+
+    local function shouldDrop()
+
+        local blocks, seeds =
+            getWaterCounts()
+
+        return (
+            blocks >= CONFIG.DROP_THRESHOLD
+            or
+            seeds >= CONFIG.DROP_THRESHOLD
+        )
+    end
+    -- ===============================================
+
+
+    -- ================= BREAK WATER =================
+    local function breakWater(point)
+
+        if not tileHasWater(point) then
+            return true
+        end
+
+        local me = client:point()
+
+        if not me then
+            return false
+        end
+
+        local dx =
+            math.abs(me.x - point.x)
+
+        local dy =
+            math.abs(me.y - point.y)
+
+        local inRange =
+            (dx <= 1 and dy <= 1)
+
+        if not inRange then
+
+            local spots = {
+
+                Vector2i.new(
+                    point.x,
+                    point.y - 1
+                ),
+
+                Vector2i.new(
+                    point.x - 1,
+                    point.y
+                ),
+
+                Vector2i.new(
+                    point.x + 1,
+                    point.y
+                ),
+
+                Vector2i.new(
+                    point.x,
+                    point.y + 1
+                ),
+            }
+
+            local reached = false
+
+            for _, spot in ipairs(spots) do
+
+                if pathTo(spot) then
+                    reached = true
+                    break
+                end
+            end
+
+            if not reached then
+                return false
+            end
+        end
+
+        for i = 1, CONFIG.MAX_HITS do
+
+            if not client:connected() then
+                ensureConnected()
+                return false
+            end
+
+            pcall(function()
+                client:hit(point)
+            end)
+
+            rsleep(CONFIG.HIT_DELAY)
+
+            if not tileHasWater(point) then
+
+                sleep(150)
+
+                safeCollect()
+
+                return true
+            end
+        end
+
+        return false
+    end
+    -- =================================================
+
+
+    -- ================= DROP =================
+    local function dropToSaveWorld()
+
+        info("Inventory full -> Save world")
+
+        pcall(function()
+            client:warp(CONFIG.SAVE_WORLD)
+        end)
+
+        if not waitForWorld() then
+            warn("Cannot enter save world!")
+            return false
+        end
+
+        sleep(1500)
+
+        local dropPos = getDropLocation()
+
+        info(
+            "Drop position X:" ..
+            dropPos.x ..
+            " Y:" ..
+            dropPos.y
+        )
+
+        if not pathTo(dropPos) then
+            warn("Cannot reach drop point!")
+            return false
+        end
+
+        sleep(500)
+
+        local blocks, seeds =
+            getWaterCounts()
+
+        if blocks > 0 then
+
+            info(
+                "Dropping water: " ..
+                blocks
+            )
+
+            pcall(function()
+
+                client:drop(
+                    CONFIG.WATER_BLOCK_ID,
+                    InventoryItemType.water,
+                    blocks
+                )
+
+            end)
+
+            sleep(1000)
+        end
+
+        if seeds > 0 then
+
+            info(
+                "Dropping seeds: " ..
+                seeds
+            )
+
+            pcall(function()
+
+                client:drop(
+                    CONFIG.WATER_BLOCK_ID,
+                    InventoryItemType.seed,
+                    seeds
+                )
+
+            end)
+
+            sleep(1000)
+        end
+
+        info("Drop complete")
+
+        return true
+    end
+    -- ==============================================
+
+
+    -- ================= MAIN LOOP =================
+    ensureConnected()
+
+    info("Started")
+
+    local totalBroken = 0
+    local worldCount = 0
+
+    while true do
+
+        updateWebhook(botId, 1000)
+
+        ensureConnected()
+
+        if shouldDrop() then
+            dropToSaveWorld()
+        end
+
+        worldCount = worldCount + 1
+        TOTAL_WORLDS = worldCount
+
+        local worldName =
+            generateWorldName()
+
+        info("Warping: " .. worldName)
+
+        pcall(function()
+            client:warp(worldName)
+        end)
+
+        if not waitForWorld() then
+
+            warn("Warp failed")
+
+            sleep(2000)
+
+        else
+
+            info("Entered: " .. worldName)
+
+            local worldBroken = 0
+            local failCount = 0
+
+            while true do
+
+                ensureConnected()
+
+                if shouldDrop() then
+                    dropToSaveWorld()
+                    break
+                end
+
+                local waterTiles =
+                    getWaterTiles()
+
+                if #waterTiles == 0 then
+                    info("Water depleted")
+                    break
+                end
+
+                info(
+                    "Found water: " ..
+                    #waterTiles
+                )
+
+                local brokenRound = 0
+
+                for _, point in ipairs(waterTiles) do
+
+                    ensureConnected()
+
+                    if shouldDrop() then
+                        break
+                    end
+
+                    if tileHasWater(point) then
+
+                        local ok =
+                            breakWater(point)
+
+                        if ok then
+
+                            worldBroken =
+                                worldBroken + 1
+
+                            totalBroken =
+                                totalBroken + 1
+
+                            TOTAL_BROKEN =
+                                totalBroken
+
+                            brokenRound =
+                                brokenRound + 1
+
+                            if worldBroken % 5 == 0 then
+
+                                info(
+                                    "Broken: " ..
+                                    worldBroken ..
+                                    " | Total: " ..
+                                    totalBroken
+                                )
+                            end
+                        end
+                    end
+
+                    sleep(CONFIG.TILE_DELAY)
+                end
+
+                if brokenRound == 0 then
+
+                    failCount = failCount + 1
+
+                    if failCount >= 3 then
+                        warn(
+                            "No progress, skip world"
+                        )
+                        break
+                    end
+
+                else
+                    failCount = 0
+                end
+
+                safeCollect()
+
+                sleep(500)
+            end
+        end
+
+        info(
+            "World done | Total: " ..
+            totalBroken ..
+            " | Worlds: " ..
+            worldCount
+        )
+
+        sleep(1000)
+    end
+end
+-- =====================================================
+
+
+-- ================= STARTUP =================
+local myClient = getClient()
+local myId = myClient.id or "unknown"
+
+print("===================================")
+print(" AUTO WATER BREAK FINAL")
+print(" Bot ID : " .. myId)
+print("===================================")
+
+runThread(function()
+
+    while true do
+
+        local ok, err = pcall(function()
+
+            if not myClient:connected() then
+                forceReconnect(
+                    myClient,
+                    myId
+                )
+            end
+
+            botMain(myClient, myId)
+
+        end)
+
+        if not ok then
+
+            log(
+                myId,
+                "[CRASH] " ..
+                tostring(err)
+            )
+        end
+
+        log(
+            myId,
+            "Restarting thread in 5 sec"
+        )
+
+        sleep(5000)
+    end
+
+end)
+
+print("[*] Script loaded!")
+-- ==========================================
