@@ -1,6 +1,7 @@
 --[[
 AUTO WATER BREAK
-FINAL REVISI WEBHOOK + INFINITE RECONNECT
+FINAL ZENITH VERSION
+WEBHOOK + INFINITE RECONNECT
 
 Features:
 - Random world
@@ -12,7 +13,7 @@ Features:
 - Webhook stats
 - Anti stuck
 - Anti stop
-- Stable farming
+- Zenith compatible
 ]]
 
 -- ================= CONFIG =================
@@ -23,11 +24,11 @@ local CONFIG = {
     DROP_Y            = 12,
 
     DROP_X_MIN        = 1,
-    DROP_X_MAX        = 20,
+    DROP_X_MAX        = 10,
 
     WATER_BLOCK_ID    = 18,
 
-    DROP_THRESHOLD    = 50,
+    DROP_THRESHOLD    = 5,
 
     HIT_DELAY         = 300,
     MAX_HITS          = 25,
@@ -37,7 +38,7 @@ local CONFIG = {
 
     RECONNECT_DELAY   = 5000,
     WORLD_LOAD_DELAY  = 4000,
-    PATH_TIMEOUT      = 10000,
+    PATH_TIMEOUT      = 15000,
 
     RAND_MIN          = 30,
     RAND_MAX          = 150,
@@ -49,8 +50,8 @@ local CONFIG = {
 local WEBHOOK_URL      = "https://discord.com/api/webhooks/1479853594416124016/Da1c-O02WM5AenCTT5GaKihq6oevBXvhjN4Br_lWQhkO_ESm8BcGMNTIf3bxIiVZW6_P"
 local WEBHOOK_INTERVAL = 60000
 
-local START_TIME       = os.time()
 local WEBHOOK_ELAPSED  = 0
+local UPTIME_SECONDS   = 0
 
 local TOTAL_BROKEN     = 0
 local TOTAL_WORLDS     = 0
@@ -81,7 +82,9 @@ local function generateWorldName()
     local result = ""
 
     for i = 1, 7 do
-        result = result .. string.char(math.random(65, 90))
+        result = result .. string.char(
+            math.random(65, 90)
+        )
     end
 
     return result
@@ -109,17 +112,16 @@ local function sendWebhook(botId)
         return
     end
 
-    local uptimeSeconds =
-        os.time() - START_TIME
-
     local hours =
-        math.floor(uptimeSeconds / 3600)
+        math.floor(UPTIME_SECONDS / 3600)
 
     local minutes =
-        math.floor((uptimeSeconds % 3600) / 60)
+        math.floor(
+            (UPTIME_SECONDS % 3600) / 60
+        )
 
     local seconds =
-        uptimeSeconds % 60
+        UPTIME_SECONDS % 60
 
     local uptimeText = string.format(
         "%02d:%02d:%02d",
@@ -168,10 +170,7 @@ local function sendWebhook(botId)
 
         footer = {
             text = "Water Break Monitor"
-        },
-
-        timestamp =
-            os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }
     }
 
     pcall(function()
@@ -188,6 +187,10 @@ local function updateWebhook(botId, elapsed)
 
     WEBHOOK_ELAPSED =
         WEBHOOK_ELAPSED + elapsed
+
+    UPTIME_SECONDS =
+        UPTIME_SECONDS +
+        math.floor(elapsed / 1000)
 
     if WEBHOOK_ELAPSED >= WEBHOOK_INTERVAL then
 
@@ -379,7 +382,10 @@ function botMain(client, botId)
         for _, tile in pairs(w.tiles) do
 
             if tile.water and tile.water ~= 0 then
-                table.insert(result, tile:point())
+                table.insert(
+                    result,
+                    tile:point()
+                )
             end
         end
 
@@ -443,17 +449,21 @@ function botMain(client, botId)
         local seeds = 0
 
         pcall(function()
+
             blocks = inv:count(
                 CONFIG.WATER_BLOCK_ID,
                 InventoryItemType.water
             ) or 0
+
         end)
 
         pcall(function()
+
             seeds = inv:count(
                 CONFIG.WATER_BLOCK_ID,
                 InventoryItemType.seed
             ) or 0
+
         end)
 
         return blocks, seeds
@@ -756,7 +766,8 @@ function botMain(client, botId)
 
                 if brokenRound == 0 then
 
-                    failCount = failCount + 1
+                    failCount =
+                        failCount + 1
 
                     if failCount >= 3 then
                         warn(
