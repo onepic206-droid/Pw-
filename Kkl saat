@@ -7,7 +7,7 @@
 -- ================= CONFIG =================
 local CONFIG = {
 
-    SAVE_WORLD        = "MODBREAK:AB",
+    SAVE_WORLD        = "WORLD:AB",
 
     DROP_Y            = 12,
 
