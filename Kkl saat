@@ -1,9 +1,10 @@
 -- ==========================================
--- AUTO WATER BREAK FINAL REVISI
+-- AUTO WATER BREAK FINAL
 -- NO WEBHOOK
 -- SERVER FULL FIX
--- RANDOM WORLD NAV CHECK
--- SAVE WORLD NO NAV CHECK
+-- RANDOM NAV CHECK
+-- SAVE WORLD FIX
+-- WATER DROP FIX
 -- ==========================================
 
 -- ================= CONFIG =================
@@ -411,7 +412,7 @@ function botMain(client, botId)
 
             blocks = inv:count(
                 CONFIG.WATER_BLOCK_ID,
-                InventoryItemType.block
+                InventoryItemType.water
             ) or 0
 
         end)
@@ -536,7 +537,9 @@ function botMain(client, botId)
             return false
         end
 
-        sleep(500)
+        safeCollect()
+
+        sleep(1500)
 
         local blocks, seeds =
             getWaterCounts()
@@ -550,13 +553,13 @@ function botMain(client, botId)
 
         if blocks > 0 then
 
-            info("Dropping blocks")
+            info("Dropping water")
 
             pcall(function()
 
                 client:drop(
                     CONFIG.WATER_BLOCK_ID,
-                    InventoryItemType.block,
+                    InventoryItemType.water,
                     blocks
                 )
 
@@ -707,9 +710,8 @@ local myClient = getClient()
 local myId = myClient.id or "unknown"
 
 print("===================================")
-print(" AUTO WATER BREAK FINAL REVISI")
-print(" RANDOM NAV CHECK")
-print(" SAVE WORLD FIX")
+print(" AUTO WATER BREAK FINAL")
+print(" WATER DROP FIX")
 print(" Bot ID : " .. myId)
 print("===================================")
 
