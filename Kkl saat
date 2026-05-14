@@ -4,7 +4,6 @@
 -- SERVER FULL FIX
 -- RANDOM WORLD NAV CHECK
 -- SAVE WORLD NO NAV CHECK
--- WATER DROP FIXED
 -- ==========================================
 
 -- ================= CONFIG =================
@@ -405,12 +404,12 @@ function botMain(client, botId)
             return 0, 0
         end
 
-        local waters = 0
+        local blocks = 0
         local seeds = 0
 
         pcall(function()
 
-            waters = inv:count(
+            blocks = inv:count(
                 CONFIG.WATER_BLOCK_ID,
                 InventoryItemType.water
             ) or 0
@@ -426,16 +425,16 @@ function botMain(client, botId)
 
         end)
 
-        return waters, seeds
+        return blocks, seeds
     end
 
     local function shouldDrop()
 
-        local waters, seeds =
+        local blocks, seeds =
             getWaterCounts()
 
         return (
-            waters >= CONFIG.DROP_THRESHOLD
+            blocks >= CONFIG.DROP_THRESHOLD
             or
             seeds >= CONFIG.DROP_THRESHOLD
         )
@@ -539,26 +538,26 @@ function botMain(client, botId)
 
         sleep(500)
 
-        local waters, seeds =
+        local blocks, seeds =
             getWaterCounts()
 
         info(
-            "Waters: " ..
-            waters ..
+            "Blocks: " ..
+            blocks ..
             " | Seeds: " ..
             seeds
         )
 
-        if waters > 0 then
+        if blocks > 0 then
 
-            info("Dropping waters")
+            info("Dropping blocks")
 
             pcall(function()
 
                 client:drop(
                     CONFIG.WATER_BLOCK_ID,
                     InventoryItemType.water,
-                    waters
+                    blocks
                 )
 
             end)
@@ -711,7 +710,6 @@ print("===================================")
 print(" AUTO WATER BREAK FINAL REVISI")
 print(" RANDOM NAV CHECK")
 print(" SAVE WORLD FIX")
-print(" WATER DROP FIXED")
 print(" Bot ID : " .. myId)
 print("===================================")
 
