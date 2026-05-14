@@ -1,10 +1,10 @@
 -- ==========================================
--- AUTO WATER BREAK FINAL
+-- AUTO WATER BREAK FINAL REVISI
 -- NO WEBHOOK
 -- SERVER FULL FIX
--- RANDOM NAV CHECK
--- SAVE WORLD FIX
--- WATER DROP FIX
+-- RANDOM WORLD NAV CHECK
+-- SAVE WORLD NO NAV CHECK
+-- WATER DROP FIXED
 -- ==========================================
 
 -- ================= CONFIG =================
@@ -405,12 +405,12 @@ function botMain(client, botId)
             return 0, 0
         end
 
-        local blocks = 0
+        local waters = 0
         local seeds = 0
 
         pcall(function()
 
-            blocks = inv:count(
+            waters = inv:count(
                 CONFIG.WATER_BLOCK_ID,
                 InventoryItemType.water
             ) or 0
@@ -426,16 +426,16 @@ function botMain(client, botId)
 
         end)
 
-        return blocks, seeds
+        return waters, seeds
     end
 
     local function shouldDrop()
 
-        local blocks, seeds =
+        local waters, seeds =
             getWaterCounts()
 
         return (
-            blocks >= CONFIG.DROP_THRESHOLD
+            waters >= CONFIG.DROP_THRESHOLD
             or
             seeds >= CONFIG.DROP_THRESHOLD
         )
@@ -537,30 +537,28 @@ function botMain(client, botId)
             return false
         end
 
-        safeCollect()
+        sleep(500)
 
-        sleep(1500)
-
-        local blocks, seeds =
+        local waters, seeds =
             getWaterCounts()
 
         info(
-            "Blocks: " ..
-            blocks ..
+            "Waters: " ..
+            waters ..
             " | Seeds: " ..
             seeds
         )
 
-        if blocks > 0 then
+        if waters > 0 then
 
-            info("Dropping water")
+            info("Dropping waters")
 
             pcall(function()
 
                 client:drop(
                     CONFIG.WATER_BLOCK_ID,
                     InventoryItemType.water,
-                    blocks
+                    waters
                 )
 
             end)
@@ -710,8 +708,10 @@ local myClient = getClient()
 local myId = myClient.id or "unknown"
 
 print("===================================")
-print(" AUTO WATER BREAK FINAL")
-print(" WATER DROP FIX")
+print(" AUTO WATER BREAK FINAL REVISI")
+print(" RANDOM NAV CHECK")
+print(" SAVE WORLD FIX")
+print(" WATER DROP FIXED")
 print(" Bot ID : " .. myId)
 print("===================================")
 
