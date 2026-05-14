@@ -1,7 +1,9 @@
 -- ==========================================
--- AUTO WATER BREAK FINAL
--- NO WEBHOOK VERSION
+-- AUTO WATER BREAK FINAL REVISI
+-- NO WEBHOOK
 -- SERVER FULL FIX
+-- RANDOM WORLD NAV CHECK
+-- SAVE WORLD NO NAV CHECK
 -- ==========================================
 
 -- ================= CONFIG =================
@@ -16,7 +18,7 @@ local CONFIG = {
 
     WATER_BLOCK_ID    = 18,
 
-    DROP_THRESHOLD    = 50,
+    DROP_THRESHOLD    = 5,
 
     HIT_DELAY         = 300,
     MAX_HITS          = 25,
@@ -178,7 +180,7 @@ function botMain(client, botId)
 
 
     -- ================= FORCE WARP =================
-    local function warpUntilEnter(worldName)
+    local function warpUntilEnter(worldName, checkNavigation)
 
         while true do
 
@@ -212,18 +214,29 @@ function botMain(client, botId)
 
                 local nav = client:navigation()
 
-                if nav
-                and nav ~= "#menu"
-                and string.find(
-                    string.upper(nav),
-                    string.upper(worldName),
-                    1,
-                    true
-                ) then
+                -- RANDOM WORLD
+                if checkNavigation then
 
-                    info("Entered -> " .. worldName)
+                    if nav
+                    and nav ~= "#menu"
+                    and string.upper(nav)
+                    == string.upper(worldName) then
 
-                    return true
+                        info("Entered -> " .. worldName)
+
+                        return true
+                    end
+
+                -- SAVE WORLD
+                else
+
+                    if nav
+                    and nav ~= "#menu" then
+
+                        info("Entered -> " .. tostring(nav))
+
+                        return true
+                    end
                 end
 
                 if client.status
@@ -509,9 +522,10 @@ function botMain(client, botId)
 
         info("Inventory full -> Save world")
 
-        warpUntilEnter(CONFIG.SAVE_WORLD)
-
-        info("Entered save world")
+        warpUntilEnter(
+            CONFIG.SAVE_WORLD,
+            false
+        )
 
         sleep(1500)
 
@@ -536,6 +550,8 @@ function botMain(client, botId)
 
         if blocks > 0 then
 
+            info("Dropping blocks")
+
             pcall(function()
 
                 client:drop(
@@ -550,6 +566,8 @@ function botMain(client, botId)
         end
 
         if seeds > 0 then
+
+            info("Dropping seeds")
 
             pcall(function()
 
@@ -593,7 +611,10 @@ function botMain(client, botId)
         local worldName =
             generateWorldName()
 
-        warpUntilEnter(worldName)
+        warpUntilEnter(
+            worldName,
+            true
+        )
 
         local worldBroken = 0
         local failCount = 0
@@ -686,8 +707,9 @@ local myClient = getClient()
 local myId = myClient.id or "unknown"
 
 print("===================================")
-print(" AUTO WATER BREAK FINAL")
-print(" NO WEBHOOK VERSION")
+print(" AUTO WATER BREAK FINAL REVISI")
+print(" RANDOM NAV CHECK")
+print(" SAVE WORLD FIX")
 print(" Bot ID : " .. myId)
 print("===================================")
 
