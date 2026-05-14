@@ -1,7 +1,7 @@
 -- ==========================================
 -- AUTO WATER BREAK FINAL
--- ZENITH VERSION
--- INFINITE RECONNECT + SERVER FULL FIX
+-- NO WEBHOOK VERSION
+-- SERVER FULL FIX
 -- ==========================================
 
 -- ================= CONFIG =================
@@ -32,22 +32,16 @@ local CONFIG = {
 -- ==========================================
 
 
--- ================= WEBHOOK =================
-local WEBHOOK_URL      = "YOUR_WEBHOOK"
-local WEBHOOK_INTERVAL = 60000
-
-local WEBHOOK_ELAPSED  = 0
-local UPTIME_SECONDS   = 0
-
-local TOTAL_BROKEN     = 0
-local TOTAL_WORLDS     = 0
--- ===========================================
-
-
 -- ================= AUTO COLLECT =================
 getPreferences().collect = true
 getPreferences().collectInterval = 50
 -- =================================================
+
+
+-- ================= STATS =================
+local TOTAL_BROKEN = 0
+local TOTAL_WORLDS = 0
+-- =========================================
 
 
 -- ================= UTILS =================
@@ -89,103 +83,6 @@ local function getDropLocation()
     )
 end
 -- =========================================
-
-
--- ================= WEBHOOK =================
-local function sendWebhook(botId)
-
-    if WEBHOOK_URL == "" then
-        return
-    end
-
-    local hours =
-        math.floor(UPTIME_SECONDS / 3600)
-
-    local minutes =
-        math.floor(
-            (UPTIME_SECONDS % 3600) / 60
-        )
-
-    local seconds =
-        UPTIME_SECONDS % 60
-
-    local uptimeText = string.format(
-        "%02d:%02d:%02d",
-        hours,
-        minutes,
-        seconds
-    )
-
-    local embed = {
-
-        title = "AUTO WATER BREAK",
-        description = "Realtime Bot Statistics",
-        color = 5763719,
-
-        fields = {
-
-            {
-                name = "BOT INFO",
-                value = string.format(
-                    "Bot ID : %s\nStatus : ONLINE",
-                    tostring(botId)
-                ),
-                inline = false
-            },
-
-            {
-                name = "FARM STATS",
-                value = string.format(
-                    "Total Broken : %d\nWorlds Done : %d",
-                    TOTAL_BROKEN,
-                    TOTAL_WORLDS
-                ),
-                inline = false
-            },
-
-            {
-                name = "SYSTEM",
-                value = string.format(
-                    "Uptime : %s",
-                    uptimeText
-                ),
-                inline = false
-            }
-
-        },
-
-        footer = {
-            text = "Water Break Monitor"
-        }
-    }
-
-    pcall(function()
-
-        webhook(WEBHOOK_URL, {
-            username = "Water Break",
-            embeds = { embed }
-        })
-
-    end)
-end
-
-local function updateWebhook(botId, elapsed)
-
-    WEBHOOK_ELAPSED =
-        WEBHOOK_ELAPSED + elapsed
-
-    UPTIME_SECONDS =
-        UPTIME_SECONDS +
-        math.floor(elapsed / 1000)
-
-    if WEBHOOK_ELAPSED >= WEBHOOK_INTERVAL then
-
-        sendWebhook(botId)
-
-        WEBHOOK_ELAPSED = 0
-    end
-end
--- ===========================================
 
 
 -- ================= FORCE RECONNECT =================
@@ -317,8 +214,12 @@ function botMain(client, botId)
 
                 if nav
                 and nav ~= "#menu"
-                and string.upper(nav)
-                == string.upper(worldName) then
+                and string.find(
+                    string.upper(nav),
+                    string.upper(worldName),
+                    1,
+                    true
+                ) then
 
                     info("Entered -> " .. worldName)
 
@@ -497,7 +398,7 @@ function botMain(client, botId)
 
             blocks = inv:count(
                 CONFIG.WATER_BLOCK_ID,
-                InventoryItemType.water
+                InventoryItemType.block
             ) or 0
 
         end)
@@ -554,25 +455,10 @@ function botMain(client, botId)
 
             local spots = {
 
-                Vector2i.new(
-                    point.x,
-                    point.y - 1
-                ),
-
-                Vector2i.new(
-                    point.x - 1,
-                    point.y
-                ),
-
-                Vector2i.new(
-                    point.x + 1,
-                    point.y
-                ),
-
-                Vector2i.new(
-                    point.x,
-                    point.y + 1
-                ),
+                Vector2i.new(point.x, point.y - 1),
+                Vector2i.new(point.x - 1, point.y),
+                Vector2i.new(point.x + 1, point.y),
+                Vector2i.new(point.x, point.y + 1),
             }
 
             local reached = false
@@ -625,16 +511,11 @@ function botMain(client, botId)
 
         warpUntilEnter(CONFIG.SAVE_WORLD)
 
+        info("Entered save world")
+
         sleep(1500)
 
         local dropPos = getDropLocation()
-
-        info(
-            "Drop position X:" ..
-            dropPos.x ..
-            " Y:" ..
-            dropPos.y
-        )
 
         if not pathTo(dropPos) then
             warn("Cannot reach drop point!")
@@ -646,18 +527,20 @@ function botMain(client, botId)
         local blocks, seeds =
             getWaterCounts()
 
-        if blocks > 0 then
+        info(
+            "Blocks: " ..
+            blocks ..
+            " | Seeds: " ..
+            seeds
+        )
 
-            info(
-                "Dropping water: " ..
-                blocks
-            )
+        if blocks > 0 then
 
             pcall(function()
 
                 client:drop(
                     CONFIG.WATER_BLOCK_ID,
-                    InventoryItemType.water,
+                    InventoryItemType.block,
                     blocks
                 )
 
@@ -667,11 +550,6 @@ function botMain(client, botId)
         end
 
         if seeds > 0 then
-
-            info(
-                "Dropping seeds: " ..
-                seeds
-            )
 
             pcall(function()
 
@@ -702,8 +580,6 @@ function botMain(client, botId)
     local worldCount = 0
 
     while true do
-
-        updateWebhook(botId, 1000)
 
         ensureConnected()
 
@@ -739,11 +615,6 @@ function botMain(client, botId)
                 break
             end
 
-            info(
-                "Found water: " ..
-                #waterTiles
-            )
-
             local brokenRound = 0
 
             for _, point in ipairs(waterTiles) do
@@ -772,16 +643,6 @@ function botMain(client, botId)
 
                         brokenRound =
                             brokenRound + 1
-
-                        if worldBroken % 5 == 0 then
-
-                            info(
-                                "Broken: " ..
-                                worldBroken ..
-                                " | Total: " ..
-                                totalBroken
-                            )
-                        end
                     end
                 end
 
@@ -794,9 +655,7 @@ function botMain(client, botId)
                     failCount + 1
 
                 if failCount >= 3 then
-                    warn(
-                        "No progress, skip world"
-                    )
+                    warn("No progress, skip world")
                     break
                 end
 
@@ -828,7 +687,7 @@ local myId = myClient.id or "unknown"
 
 print("===================================")
 print(" AUTO WATER BREAK FINAL")
-print(" SERVER FULL FIX")
+print(" NO WEBHOOK VERSION")
 print(" Bot ID : " .. myId)
 print("===================================")
 
