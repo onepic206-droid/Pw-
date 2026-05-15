@@ -5,7 +5,7 @@
 local CONFIG = {
     mainDelay = 1000,
     moveDelay = 150,
-    collectDelay = 20,
+    collectDelay = 50,
 
     blockID = 5,
     seedID = 5,
@@ -16,9 +16,9 @@ local CONFIG = {
     collectRange = 6,
     pnbRange = 1,
 
-    START_X = 3,
-    START_Y = 12,
-    BOT_Y_STEP = 2,
+    START_X = 1,
+    START_Y = 9,
+    BOT_Y_STEP = 3,
 
     SAVE_WORLD = "MODBREAK",
     SAVE_DOOR  = "AB",
@@ -27,7 +27,7 @@ local CONFIG = {
 
     WARP_DELAY = 4000,
     WARP_TIMEOUT = 25,
-    PATH_TIMEOUT = 15000,
+    PATH_TIMEOUT = 8000,
 
     EXCLUSIVE_ITEM = {
         {id = 3364, type = InventoryItemType.consumable},
@@ -140,7 +140,7 @@ end
 
 local function collectNearby(bot, centerPos)
     local world = bot:world()
-    if not world then return end
+    if not world or not centerPos then return end
 
     for _, obj in pairs(world.collectables) do
         if obj and obj.point then
@@ -166,7 +166,12 @@ end
 
 local function isOnline(bot)
     if not bot then return false end
-    if bot.connected and bot:connected() then return true end
+
+    local ok, res = pcall(function()
+        return bot:connected()
+    end)
+
+    if ok and res then return true end
 
     local s = tostring(bot.status)
     return s == "online" or s == "GameClientStatus.online"
@@ -405,7 +410,6 @@ local function botThread(bot)
     waitOnline(bot)
 
     local farmWorld, farmDoor = splitWorld(nav(bot))
-
     local start = getStartPos(bot)
 
     pathTo(bot, start)
@@ -418,35 +422,29 @@ local function botThread(bot)
         waitOnline(bot)
 
         local p = bot:point()
-        if not p then
-            sleep(CONFIG.mainDelay)
-            goto continue
-        end
 
-        local trees = scanTrees(bot, rowY)
-
-        if #trees <= 0 then
-            waitReady(bot, lastTreePos)
-            goto continue
-        end
-
-        harvestTrees(bot, trees)
-        plantOldTiles(bot, trees)
-
-        if #trees > 0 then
-            lastTreePos = trees[#trees]
-        end
-
-        runPNB(bot)
-
-        p = bot:point()
         if p then
-            saveSystem(bot, farmWorld, farmDoor, p.x, p.y)
+            local trees = scanTrees(bot, rowY)
+
+            if #trees <= 0 then
+                waitReady(bot, lastTreePos)
+            else
+                harvestTrees(bot, trees)
+                plantOldTiles(bot, trees)
+
+                lastTreePos = trees[#trees]
+
+                runPNB(bot)
+
+                p = bot:point()
+                if p then
+                    saveSystem(bot, farmWorld, farmDoor, p.x, p.y)
+                end
+
+                waitReady(bot, lastTreePos)
+            end
         end
 
-        waitReady(bot, lastTreePos)
-
-        ::continue::
         sleep(CONFIG.mainDelay)
     end
 end
