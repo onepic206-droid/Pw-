@@ -1,4 +1,5 @@
 -- AUTO PABRIK ADVANCE MULTI BOT
+-- BOT POS STABIL: BOT 1 Y9, BOT 2 Y11, BOT 3 Y13, DST
 -- FLOW: PNB START POS -> HARVEST + PLANT LANGSUNG -> DROP EXTRA
 
 local CONFIG = {
@@ -128,11 +129,21 @@ local function goToTile(bot, x, y)
 end
 
 local function botIndex(bot)
-    local bots = getClients()
+    local bots = {}
 
-    for i, b in pairs(bots) do
-        if b and bot and b.id == bot.id then
-            return tonumber(i) or 1
+    for _, b in pairs(getClients()) do
+        if b and b.id then
+            table.insert(bots, b)
+        end
+    end
+
+    table.sort(bots, function(a, b)
+        return tostring(a.id) < tostring(b.id)
+    end)
+
+    for i, b in ipairs(bots) do
+        if b.id == bot.id then
+            return i
         end
     end
 
@@ -225,11 +236,7 @@ local function harvestPlantRow(bot, rowY)
 
             if inv:count(CONFIG.ITEM_ID, InventoryItemType.seed) > 0 then
                 if canPlant(world, x, rowY) then
-                    bot:place(
-                        pos,
-                        CONFIG.ITEM_ID,
-                        InventoryItemType.seed
-                    )
+                    bot:place(pos, CONFIG.ITEM_ID, InventoryItemType.seed)
                     sleep(120)
                 end
             end
@@ -265,11 +272,7 @@ local function pnb(bot, start)
         local tiles = makePnbTiles(bot)
 
         for _, pos in ipairs(tiles) do
-            bot:place(
-                pos,
-                CONFIG.ITEM_ID,
-                InventoryItemType.block
-            )
+            bot:place(pos, CONFIG.ITEM_ID, InventoryItemType.block)
             rsleep(80, 140)
         end
 
@@ -369,6 +372,9 @@ local function botThread(bot)
 
     while true do
         waitOnline(bot)
+
+        start = getStartPos(bot)
+        rowY = start.y
 
         warp(bot, CONFIG.FARM_WORLD)
         goToTile(bot, start.x, start.y)
